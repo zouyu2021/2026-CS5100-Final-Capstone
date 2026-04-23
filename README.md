@@ -22,10 +22,9 @@ ARI, and a best-hit stability metric.
 │   ├── __init__.py
 │   └── kmeans.py                 # KMeans class (random / k-means++)
 │                                 # + macqueen_online_kmeans() online variant
-├── experiments/
-│   └── run_experiments.py        # loads Iris + Wine from OpenML,
-│                                 # runs 30 seeds per config, writes outputs
-└── build_slides.py               # optional: rebuild the PPT deck from results
+└── experiments/
+    └── run_experiments.py        # loads Iris + Wine from OpenML,
+                                  # runs 30 seeds per config, writes outputs
 ```
 
 Running the experiment script creates `results/` and `figures/` folders
