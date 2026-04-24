@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import sys
 from pathlib import Path
 
@@ -21,83 +19,78 @@ RESULTS_DIR.mkdir(exist_ok=True)
 FIGS_DIR.mkdir(exist_ok=True)
 
 
-def _fetch_iris_public():
+def fetch_iris_public():
 
     try:
-        bunch = fetch_openml(
-            name="iris", version=1, as_frame=False, parser="liac-arff"
-        )
+        bunch = fetch_openml(name="iris", version=1, as_frame=False,
+                             parser="liac-arff")
         X = np.asarray(bunch.data, dtype=np.float64)
+
         _, y = np.unique(bunch.target, return_inverse=True)
         source = "openml (id=iris, v1)"
     except Exception as exc:
-        print(f"  [iris] OpenML fetch failed ({exc}); using sklearn's bundled UCI copy")
+        print(f"  [iris] OpenML fetch failed ({exc}); using sklearn copy")
         b = load_iris()
         X, y = b.data.astype(np.float64), b.target
         source = "sklearn bundled UCI copy"
     return X, y, source
 
 
-def _fetch_wine_public():
+def fetch_wine_public():
 
     try:
-        bunch = fetch_openml(
-            name="wine", version=1, as_frame=False, parser="liac-arff"
-        )
+        bunch = fetch_openml(name="wine", version=1, as_frame=False,
+                             parser="liac-arff")
         X = np.asarray(bunch.data, dtype=np.float64)
         _, y = np.unique(bunch.target, return_inverse=True)
         source = "openml (id=wine, v1)"
     except Exception as exc:
-        print(f"  [wine] OpenML fetch failed ({exc}); using sklearn's bundled UCI copy")
+        print(f"  [wine] OpenML fetch failed ({exc}); using sklearn copy")
         b = load_wine()
         X, y = b.data.astype(np.float64), b.target
         source = "sklearn bundled UCI copy"
     return X, y, source
 
 
-def load_datasets(verbose: bool = True):
+def load_datasets(verbose=True):
 
     datasets = {}
 
-    X, y, src = _fetch_iris_public()
+    X, y, src = fetch_iris_public()
     if verbose:
         print(f"  iris   : {X.shape} from {src}")
     datasets["iris"] = (StandardScaler().fit_transform(X), y, 3)
 
-    X, y, src = _fetch_wine_public()
+    X, y, src = fetch_wine_public()
     if verbose:
         print(f"  wine   : {X.shape} from {src}")
     datasets["wine"] = (StandardScaler().fit_transform(X), y, 3)
 
-    X_blobs, y_blobs = make_blobs(
-        n_samples=500,
-        centers=4,
-        cluster_std=1.0,
-        n_features=2,
-        random_state=0,
-    )
-    datasets["blobs_easy"] = (X_blobs, y_blobs, 4)
 
-    X_hard, y_hard = make_blobs(
-        n_samples=1500,
-        centers=15,
-        cluster_std=1.5,
-        n_features=10,
-        random_state=0,
-    )
+    X_easy, y_easy = make_blobs(n_samples=500, centers=4, cluster_std=1.0,
+                                n_features=2, random_state=0)
+    datasets["blobs_easy"] = (X_easy, y_easy, 4)
+
+    X_hard, y_hard = make_blobs(n_samples=1500, centers=15, cluster_std=1.5,
+                                n_features=10, random_state=0)
     datasets["blobs_hard"] = (X_hard, y_hard, 15)
 
     return datasets
 
 
 def run_once(X, k, init, seed):
-    model = KMeans(n_clusters=k, init=init, random_state=seed, max_iter=300, tol=1e-4)
+
+    model = KMeans(n_clusters=k, init=init, random_state=seed,
+                   max_iter=300, tol=1e-4)
     res = model.fit(X)
+
+
     n_unique = len(np.unique(res.labels))
     if n_unique > 1:
         sil = float(silhouette_score(X, res.labels))
     else:
         sil = float("nan")
+
     return {
         "inertia": res.inertia,
         "n_iter": res.n_iter,
@@ -110,7 +103,8 @@ def run_once(X, k, init, seed):
     }
 
 
-def run_sweep(n_seeds: int = 30):
+def run_sweep(n_seeds=30):
+
     datasets = load_datasets()
     per_run_rows = []
 
@@ -118,7 +112,7 @@ def run_sweep(n_seeds: int = 30):
         for init in ("random", "k-means++"):
             for seed in range(n_seeds):
                 r = run_once(X, k, init, seed)
-                ari = float(adjusted_rand_score(y, r["labels"])) if y is not None else float("nan")
+                ari = float(adjusted_rand_score(y, r["labels"]))
                 per_run_rows.append({
                     "dataset": name,
                     "init": init,
@@ -137,41 +131,44 @@ def run_sweep(n_seeds: int = 30):
     df = pd.DataFrame(per_run_rows)
     df.to_csv(RESULTS_DIR / "per_run.csv", index=False)
 
-    agg = (
-        df.groupby(["dataset", "init"])
-          .agg(
-              inertia_mean=("inertia", "mean"),
-              inertia_std=("inertia", "std"),
-              inertia_min=("inertia", "min"),
-              inertia_max=("inertia", "max"),
-              n_iter_mean=("n_iter", "mean"),
-              n_iter_std=("n_iter", "std"),
-              runtime_mean=("runtime_sec", "mean"),
-              runtime_std=("runtime_sec", "std"),
-              silhouette_mean=("silhouette", "mean"),
-              silhouette_std=("silhouette", "std"),
-              ari_mean=("ari_vs_true_labels", "mean"),
-              ari_std=("ari_vs_true_labels", "std"),
-          )
-          .reset_index()
-    )
+    summary_rows = []
+    for (ds, init), group in df.groupby(["dataset", "init"]):
+        summary_rows.append({
+            "dataset": ds,
+            "init": init,
+            "inertia_mean": group["inertia"].mean(),
+            "inertia_std": group["inertia"].std(),
+            "inertia_min": group["inertia"].min(),
+            "inertia_max": group["inertia"].max(),
+            "n_iter_mean": group["n_iter"].mean(),
+            "n_iter_std": group["n_iter"].std(),
+            "runtime_mean": group["runtime_sec"].mean(),
+            "runtime_std": group["runtime_sec"].std(),
+            "silhouette_mean": group["silhouette"].mean(),
+            "silhouette_std": group["silhouette"].std(),
+            "ari_mean": group["ari_vs_true_labels"].mean(),
+            "ari_std": group["ari_vs_true_labels"].std(),
+        })
+    agg = pd.DataFrame(summary_rows)
 
-    best_hit = []
+    best_hit_rows = []
     for ds in df["dataset"].unique():
-        ds_df = df[df.dataset == ds]
+        ds_df = df[df["dataset"] == ds]
         best = ds_df["inertia"].min()
         for init in ("random", "k-means++"):
-            sub = ds_df[ds_df.init == init]
+            sub = ds_df[ds_df["init"] == init]
             frac = float((sub["inertia"] <= best * 1.001).mean())
-            best_hit.append({"dataset": ds, "init": init, "frac_at_best": frac})
-    best_hit_df = pd.DataFrame(best_hit)
+            best_hit_rows.append({"dataset": ds, "init": init,
+                                  "frac_at_best": frac})
+    best_hit_df = pd.DataFrame(best_hit_rows)
     agg = agg.merge(best_hit_df, on=["dataset", "init"])
 
     agg.to_csv(RESULTS_DIR / "summary.csv", index=False)
     return df, agg
 
 
-def figure_convergence(dataset_name: str, X, k: int, n_seeds: int = 20):
+def figure_convergence(dataset_name, X, k, n_seeds=20):
+
     fig, axes = plt.subplots(1, 2, figsize=(10, 4), sharey=True)
     for ax, init in zip(axes, ["random", "k-means++"]):
         for seed in range(n_seeds):
@@ -192,10 +189,12 @@ def figure_convergence(dataset_name: str, X, k: int, n_seeds: int = 20):
     return path
 
 
-def figure_inertia_distribution(df: pd.DataFrame):
-    fig, axes = plt.subplots(1, len(df["dataset"].unique()), figsize=(14, 4), sharey=False)
-    for ax, ds in zip(axes, sorted(df["dataset"].unique())):
-        data = [df[(df.dataset == ds) & (df.init == init)]["inertia"].values
+def figure_inertia_distribution(df):
+
+    datasets = sorted(df["dataset"].unique())
+    fig, axes = plt.subplots(1, len(datasets), figsize=(14, 4), sharey=False)
+    for ax, ds in zip(axes, datasets):
+        data = [df[(df["dataset"] == ds) & (df["init"] == init)]["inertia"].values
                 for init in ("random", "k-means++")]
         ax.boxplot(data, tick_labels=["random", "k-means++"])
         ax.set_title(ds)
@@ -209,7 +208,7 @@ def figure_inertia_distribution(df: pd.DataFrame):
     return path
 
 
-def figure_blobs_clusters(X, k: int):
+def figure_blobs_clusters(X, k):
 
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
     for ax, init in zip(axes, ["random", "k-means++"]):
@@ -219,7 +218,8 @@ def figure_blobs_clusters(X, k: int):
         ax.scatter(res.centers[:, 0], res.centers[:, 1],
                    marker="X", c="black", s=120, edgecolors="white")
         ax.set_title(f"{init}\nWCSS={res.inertia:.1f}, iter={res.n_iter}")
-        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_xticks([])
+        ax.set_yticks([])
     fig.suptitle("Clustering of the synthetic blobs dataset (seed=0)")
     fig.tight_layout()
     path = FIGS_DIR / "blobs_clusters.png"
@@ -228,24 +228,27 @@ def figure_blobs_clusters(X, k: int):
     return path
 
 
-def figure_macqueen_illustration(X, k: int):
+def figure_macqueen_illustration(X, k):
 
     batch = KMeans(n_clusters=k, init="random", random_state=0).fit(X)
     online = macqueen_online_kmeans(X, k=k, random_state=0)
+
     fig, axes = plt.subplots(1, 2, figsize=(10, 4))
-    for ax, (name, res) in zip(axes, [("batch (Lloyd)", batch),
-                                      ("online (MacQueen 1967)", online)]):
+    pairs = [("batch (Lloyd)", batch), ("online (MacQueen 1967)", online)]
+    for ax, (name, res) in zip(axes, pairs):
         ax.scatter(X[:, 0], X[:, 1], c=res.labels, s=10, cmap="tab10")
         ax.scatter(res.centers[:, 0], res.centers[:, 1],
                    marker="X", c="black", s=120, edgecolors="white")
         ax.set_title(f"{name}\nWCSS={res.inertia:.1f}")
-        ax.set_xticks([]); ax.set_yticks([])
+        ax.set_xticks([])
+        ax.set_yticks([])
     fig.suptitle("Batch vs MacQueen-style online k-means (blobs, seed=0)")
     fig.tight_layout()
     path = FIGS_DIR / "macqueen_online_vs_batch.png"
     fig.savefig(path, dpi=140)
     plt.close(fig)
     return path
+
 
 
 def main():
